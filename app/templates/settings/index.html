@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Cài đặt - {{ site_name }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <h4 class="mb-3">Cài đặt trang web</h4>
+
+    <div class="alert alert-{{ 'success' if influx_configured else 'warning' }}">
+      Kết nối InfluxDB: <strong>{{ 'đã cấu hình' if influx_configured else 'chưa cấu hình đầy đủ' }}</strong>.
+      Chỉnh sửa file <code>.env</code> (INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET) để kết nối.
+    </div>
+
+    <form method="post">
+      <div class="mb-3">
+        <label class="form-label">Tên website</label>
+        <input type="text" name="site_name" class="form-control" value="{{ values.site_name }}">
+      </div>
+      <div class="row">
+        <div class="col mb-3">
+          <label class="form-label">Ngưỡng cảnh báo mặc định (°C)</label>
+          <input type="number" step="0.1" name="warning_threshold" class="form-control" value="{{ values.warning_threshold }}">
+        </div>
+        <div class="col mb-3">
+          <label class="form-label">Ngưỡng nguy hiểm mặc định (°C)</label>
+          <input type="number" step="0.1" name="critical_threshold" class="form-control" value="{{ values.critical_threshold }}">
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Múi giờ</label>
+        <input type="text" name="timezone" class="form-control" value="{{ values.timezone }}">
+      </div>
+      <button type="submit" class="btn btn-primary">Lưu cài đặt</button>
+    </form>
+
+    <form method="post" action="{{ url_for('settings.reset') }}" class="mt-2" onsubmit="return confirm('Khôi phục toàn bộ cài đặt về mặc định? (Tên website: {{ defaults.site_name }}, ngưỡng cảnh báo: {{ defaults.warning_threshold }}°C, ngưỡng nguy hiểm: {{ defaults.critical_threshold }}°C, múi giờ: {{ defaults.timezone }})');">
+      <button type="submit" class="btn btn-outline-secondary">Reset về mặc định</button>
+    </form>
+
+    <div class="card border-danger mt-4">
+      <div class="card-header bg-danger text-white">Vùng nguy hiểm</div>
+      <div class="card-body">
+        <p class="mb-2">Xóa toàn bộ <strong>kho, vùng, cảm biến và thiết bị</strong> hiện có trong hệ thống. Hành động này <strong>không thể hoàn tác</strong>.</p>
+        <ul class="text-muted small mb-3">
+          <li>Không ảnh hưởng: tài khoản người dùng, cài đặt trang web ở trên</li>
+          <li>Không ảnh hưởng: dữ liệu đã ghi trong InfluxDB (thiết bị vẫn tiếp tục gửi dữ liệu bình thường)</li>
+        </ul>
+        <form method="post" action="{{ url_for('settings.factory_reset') }}"
+              onsubmit="return confirm('XÓA TOÀN BỘ kho, vùng, cảm biến và thiết bị? Không thể hoàn tác.') && prompt('Gõ chính xác XOA (không dấu, viết hoa) để xác nhận:') === 'XOA';">
+          <button type="submit" class="btn btn-danger">Xóa toàn bộ dữ liệu vận hành</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

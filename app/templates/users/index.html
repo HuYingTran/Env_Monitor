@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Người dùng - {{ site_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Danh sách người dùng</h4>
+  <a href="{{ url_for('users.new') }}" class="btn btn-primary btn-sm">+ Thêm người dùng</a>
+</div>
+<div class="table-responsive">
+<table class="table table-striped bg-white">
+  <thead><tr><th>Tên đăng nhập</th><th>Email</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead>
+  <tbody>
+  {% for u in users %}
+  <tr>
+    <td><a href="{{ url_for('users.edit', user_id=u.id) }}">{{ u.username }}</a></td>
+    <td>{{ u.email or '-' }}</td>
+    <td><span class="badge bg-secondary">{{ u.role.name }}</span></td>
+    <td><span class="badge bg-{{ 'success' if u.is_active_flag else 'secondary' }}">{{ 'hoạt động' if u.is_active_flag else 'vô hiệu hóa' }}</span></td>
+    <td>
+      {% if u.id != current_user.id %}
+      <form method="post" action="{{ url_for('users.delete', user_id=u.id) }}" class="d-inline" onsubmit="return confirm('Xóa người dùng này?');">
+        <button type="submit" class="btn btn-sm btn-outline-danger">Xóa</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}Thiết bị - {{ site_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Danh sách thiết bị</h4>
+  {% if can_edit %}<a href="{{ url_for('devices.new') }}" class="btn btn-primary btn-sm">+ Thêm thiết bị</a>{% endif %}
+</div>
+
+{% if can_edit and not influx_configured %}
+<div class="alert alert-warning">InfluxDB chưa được cấu hình đầy đủ — không thể tự động phát hiện thiết bị mới.</div>
+{% endif %}
+
+{% if new_sensor_codes %}
+<div class="alert alert-info">
+  <a class="alert-link" data-bs-toggle="collapse" href="#newSensorsList" role="button" aria-expanded="false" aria-controls="newSensorsList" style="cursor:pointer; text-decoration:none;">
+    <strong>Phát hiện {{ new_sensor_codes|length }} cảm biến mới</strong> đang gửi dữ liệu vào InfluxDB (24h qua) nhưng chưa được đăng ký trong hệ thống — bấm để xem chi tiết
+  </a>
+  <div class="collapse mt-2" id="newSensorsList">
+    <ul class="mb-0">
+      {% for code in new_sensor_codes %}
+      <li class="d-flex align-items-center gap-2 mb-1">
+        <code>{{ code }}</code>
+        <a href="{{ url_for('devices.register_sensor', sensor_code=code) }}" class="btn btn-sm btn-outline-primary">Đăng ký</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{% if not rows %}
+<p class="text-muted">Chưa có thiết bị hoặc cảm biến nào.</p>
+{% else %}
+<div class="table-responsive">
+<table class="table table-striped bg-white">
+  <thead><tr><th>Tên</th><th>Mã</th><th>Loại</th><th>Kho</th><th>Trạng thái</th><th></th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+  {% if loop.index0 == 0 or row.warehouse != rows[loop.index0 - 1].warehouse %}
+  <tr class="table-light">
+    <td colspan="6" class="fw-semibold small text-muted">{{ row.warehouse or 'Chưa gán kho' }}</td>
+  </tr>
+  {% endif %}
+  <tr>
+    <td>
+      <a href="#" class="entity-link"
+         data-entity="{{ row.entity }}"
+         data-id="{{ row.id }}"
+         data-name="{{ row.name }}"
+         data-code="{{ row.code }}"
+         data-type="{{ row.type }}"
+         data-warehouse-id="{{ row.warehouse_id or '' }}"
+         data-status="{{ row.status }}"
+         data-warning-threshold="{{ row.warning_threshold if row.warning_threshold is not none else '' }}"
+         data-critical-threshold="{{ row.critical_threshold if row.critical_threshold is not none else '' }}">{{ row.name }}</a>
+    </td>
+    <td><code>{{ row.code }}</code></td>
+    <td><span class="badge bg-{{ 'primary' if row.kind == 'Thiết bị' else 'info text-dark' }}">{{ row.kind }}</span></td>
+    <td>{{ row.warehouse or '-' }}</td>
+    <td><span class="badge bg-{{ row.status_color }}">{{ row.status }}</span></td>
+    <td>
+      {% if can_edit and row.delete_url %}
+      <form method="post" action="{{ row.delete_url }}" class="d-inline" onsubmit="return confirm('Xóa thiết bị này?');">
+        <button type="submit" class="btn btn-sm btn-outline-danger">Xóa</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<!-- Modal: chi tiết thiết bị / cảm biến -->
+<div class="modal fade" id="entityModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="entityModalTitle">Chi tiết</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs mb-3" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-history-btn" data-bs-toggle="tab" data-bs-target="#tab-history" type="button" role="tab">Lịch sử</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-info-btn" data-bs-toggle="tab" data-bs-target="#tab-info" type="button" role="tab">Thông tin</button>
+          </li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade" id="tab-info" role="tabpanel">
+            <div class="mb-3">
+              <label class="form-label">Tên</label>
+              <input type="text" id="entityName" class="form-control" {% if not can_edit %}disabled{% endif %}>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Mã</label>
+              <input type="text" id="entityCode" class="form-control" disabled>
+            </div>
+            <div class="mb-3 entity-field-device">
+              <label class="form-label">Loại thiết bị</label>
+              <input type="text" id="entityType" class="form-control" placeholder="vd: cảm biến nhiệt độ, gateway..." {% if not can_edit %}disabled{% endif %}>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Kho</label>
+              <select id="entityWarehouse" class="form-select" {% if not can_edit %}disabled{% endif %}>
+                <option value="">-- Không --</option>
+                {% for w in warehouses %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="mb-3 entity-field-device">
+              <label class="form-label">Trạng thái</label>
+              <select id="entityStatus" class="form-select" {% if not can_edit %}disabled{% endif %}>
+                {% for st in statuses %}<option value="{{ st }}">{{ st }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="row entity-field-sensor">
+              <div class="col mb-3">
+                <label class="form-label">Ngưỡng cảnh báo (°C)</label>
+                <input type="number" step="0.1" id="entityWarning" class="form-control" {% if not can_edit %}disabled{% endif %}>
+              </div>
+              <div class="col mb-3">
+                <label class="form-label">Ngưỡng nguy hiểm (°C)</label>
+                <input type="number" step="0.1" id="entityCritical" class="form-control" {% if not can_edit %}disabled{% endif %}>
+              </div>
+            </div>
+            {% if can_edit %}
+            <button type="button" id="entitySaveBtn" class="btn btn-primary">Lưu thay đổi</button>
+            <span id="entitySaveMsg" class="ms-2 small"></span>
+            {% endif %}
+          </div>
+          <div class="tab-pane fade show active" id="tab-history" role="tabpanel">
+            <div class="entity-field-device text-muted small py-4 text-center">Thiết bị không có dữ liệu lịch sử riêng.</div>
+            <div class="entity-field-sensor" style="position:relative; height:320px; background-color:#f2f4f5; border-radius:6px; padding:8px;">
+              <canvas id="entityHistoryChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script>
+(function () {
+  const modalEl = document.getElementById("entityModal");
+  if (!modalEl) return;
+  const modal = new bootstrap.Modal(modalEl);
+  const canEdit = {{ 'true' if can_edit else 'false' }};
+
+  let current = null; // { entity, id }
+  let historyChart = null;
+
+  function withGapBreaks(pts) {
+    if (pts.length < 3) return pts.map((p) => ({ x: p.t, y: p.v }));
+    const deltas = [];
+    for (let i = 1; i < pts.length; i++) {
+      deltas.push(new Date(pts[i].t) - new Date(pts[i - 1].t));
+    }
+    deltas.sort((a, b) => a - b);
+    const median = deltas[Math.floor(deltas.length / 2)] || 0;
+    const threshold = median * 4;
+    const result = [{ x: pts[0].t, y: pts[0].v }];
+    for (let i = 1; i < pts.length; i++) {
+      const gap = new Date(pts[i].t) - new Date(pts[i - 1].t);
+      if (threshold > 0 && gap > threshold) {
+        const midTime = new Date((new Date(pts[i - 1].t).getTime() + new Date(pts[i].t).getTime()) / 2).toISOString();
+        result.push({ x: midTime, y: null });
+      }
+      result.push({ x: pts[i].t, y: pts[i].v });
+    }
+    return result;
+  }
+
+  async function loadHistory(sensorId) {
+    const canvas = document.getElementById("entityHistoryChart");
+    if (historyChart) {
+      historyChart.destroy();
+      historyChart = null;
+    }
+    const res = await fetch(`/api/sensors/${sensorId}/history?hours=24`);
+    const payload = await res.json();
+    const points = payload.data || [];
+
+    let min = Infinity, max = -Infinity;
+    points.forEach((p) => { if (p.v < min) min = p.v; if (p.v > max) max = p.v; });
+    const yRange = isFinite(min) && isFinite(max) ? { min: min - 10, max: max + 10 } : {};
+
+    historyChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        datasets: [{
+          label: "Nhiệt độ (°C)",
+          data: withGapBreaks(points),
+          spanGaps: false,
+          borderColor: "#2563eb",
+          backgroundColor: "#2563eb",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.25,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { type: "time", grid: { color: "#e9ecef" } },
+          y: Object.assign({ grid: { color: "#e9ecef" }, title: { display: true, text: "°C" } }, yRange),
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: "nearest", intersect: false },
+        },
+      },
+    });
+  }
+
+  document.querySelectorAll(".entity-link").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const ds = link.dataset;
+      current = { entity: ds.entity, id: ds.id };
+
+      document.getElementById("entityModalTitle").textContent = ds.name;
+      document.getElementById("entityName").value = ds.name;
+      document.getElementById("entityCode").value = ds.code;
+      document.getElementById("entityType").value = ds.type || "";
+      document.getElementById("entityWarehouse").value = ds.warehouseId || "";
+      document.getElementById("entityStatus").value = ds.status || "active";
+      document.getElementById("entityWarning").value = ds.warningThreshold || "";
+      document.getElementById("entityCritical").value = ds.criticalThreshold || "";
+
+      const isDevice = ds.entity === "device";
+      modalEl.querySelectorAll(".entity-field-device").forEach((el) => el.classList.toggle("d-none", !isDevice));
+      modalEl.querySelectorAll(".entity-field-sensor").forEach((el) => el.classList.toggle("d-none", isDevice));
+
+      document.getElementById("entitySaveMsg").textContent = "";
+      document.getElementById("tab-history-btn").click();
+      modal.show();
+
+      if (ds.entity === "sensor") {
+        loadHistory(ds.id);
+      }
+    });
+  });
+
+  const saveBtn = document.getElementById("entitySaveBtn");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      if (!current) return;
+      const name = document.getElementById("entityName").value.trim();
+      if (!name) {
+        alert("Vui lòng nhập tên.");
+        return;
+      }
+      const msgEl = document.getElementById("entitySaveMsg");
+      let url, payload;
+      if (current.entity === "device") {
+        url = `/devices/api/${current.id}`;
+        payload = {
+          name,
+          type: document.getElementById("entityType").value.trim(),
+          status: document.getElementById("entityStatus").value,
+          warehouse_id: document.getElementById("entityWarehouse").value || null,
+        };
+      } else {
+        url = `/api/sensors/${current.id}`;
+        payload = {
+          name,
+          warehouse_id: document.getElementById("entityWarehouse").value || null,
+          warning_threshold: document.getElementById("entityWarning").value || null,
+          critical_threshold: document.getElementById("entityCritical").value || null,
+        };
+      }
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        location.reload();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        msgEl.textContent = err.error || "Không thể lưu thay đổi.";
+        msgEl.className = "ms-2 small text-danger";
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

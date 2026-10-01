@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Sửa kho' if warehouse else 'Thêm kho' }} - {{ site_name }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <h4 class="mb-3">{{ 'Sửa thông tin kho' if warehouse else 'Thêm kho mới' }}</h4>
+    <form method="post" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label class="form-label">Tên kho</label>
+        <input type="text" name="name" class="form-control" value="{{ warehouse.name if warehouse else '' }}" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Mã kho</label>
+        <input type="text" name="code" class="form-control" value="{{ warehouse.code if warehouse else '' }}" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Mô tả</label>
+        <textarea name="description" class="form-control" rows="2">{{ warehouse.description if warehouse else '' }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Ảnh sơ đồ mặt bằng kho {{ '(để trống nếu không đổi)' if warehouse else '' }}</label>
+        <input type="file" name="map_image" class="form-control" accept="image/*">
+        {% if warehouse and warehouse.map_image_path %}
+        <img src="{{ url_for('static', filename='uploads/warehouse_maps/' + warehouse.map_image_path) }}" class="img-thumbnail mt-2" style="max-height:150px">
+        {% endif %}
+      </div>
+      <button type="submit" class="btn btn-primary">Lưu</button>
+      <a href="{{ url_for('main.home') if not warehouse else url_for('main.warehouse_detail', warehouse_id=warehouse.id) }}" class="btn btn-outline-secondary">Hủy</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

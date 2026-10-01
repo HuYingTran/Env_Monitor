@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Lịch sử - {{ site_name }}{% endblock %}
+{% block content %}
+<h4 class="mb-3">Lịch sử nhiệt độ</h4>
+
+{% if not influx_configured %}
+<div class="alert alert-warning">InfluxDB chưa được cấu hình đầy đủ — lịch sử sẽ rỗng.</div>
+{% endif %}
+
+<form method="get" class="row g-2 align-items-end mb-4">
+  <div class="col-md-3">
+    <label class="form-label">Kho</label>
+    <select name="warehouse_id" class="form-select" onchange="this.form.submit()">
+      <option value="">-- Chọn kho --</option>
+      {% for w in warehouses %}
+      <option value="{{ w.id }}" {% if warehouse_id == w.id %}selected{% endif %}>{{ w.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Cảm biến</label>
+    <select name="sensor_id" class="form-select">
+      <option value="">-- Chọn cảm biến --</option>
+      {% for s in sensors %}
+      <option value="{{ s.id }}" {% if sensor_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Từ ngày</label>
+    <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Đến ngày</label>
+    <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+  </div>
+  <div class="col-md-2 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">Xem</button>
+    {% if sensor_id %}
+    <a class="btn btn-outline-success" href="{{ url_for('reports.export', warehouse_id=warehouse_id, sensor_id=sensor_id, start_date=start_date, end_date=end_date) }}">Xuất Excel</a>
+    {% endif %}
+  </div>
+</form>
+
+{% if selected_sensor %}
+<h6>{{ selected_sensor.name }} <span class="text-muted small">({{ selected_sensor.sensor_code }})</span> — {{ start_date }} → {{ end_date }}</h6>
+{% if not readings %}
+<p class="text-muted">Không có dữ liệu trong khoảng thời gian này.</p>
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <div style="position:relative; height:400px; background-color:#f2f4f5; border-radius:6px; padding:8px;">
+      <canvas id="historyChart"></canvas>
+    </div>
+  </div>
+</div>
+<script>
+  window.__historyChartData = {{ chart_data | tojson }};
+</script>
+{% endif %}
+{% elif warehouse_id %}
+<p class="text-muted">Chọn một cảm biến để xem lịch sử.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if chart_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script>
+(function () {
+  const canvas = document.getElementById("historyChart");
+  if (!canvas || !window.__historyChartData) return;
+  const points = window.__historyChartData;
+
+  function withGapBreaks(pts) {
+    if (pts.length < 3) return pts.map((p) => ({ x: p.t, y: p.v }));
+    const deltas = [];
+    for (let i = 1; i < pts.length; i++) {
+      deltas.push(new Date(pts[i].t) - new Date(pts[i - 1].t));
+    }
+    deltas.sort((a, b) => a - b);
+    const median = deltas[Math.floor(deltas.length / 2)] || 0;
+    const threshold = median * 4;
+    const result = [{ x: pts[0].t, y: pts[0].v }];
+    for (let i = 1; i < pts.length; i++) {
+      const gap = new Date(pts[i].t) - new Date(pts[i - 1].t);
+      if (threshold > 0 && gap > threshold) {
+        const midTime = new Date((new Date(pts[i - 1].t).getTime() + new Date(pts[i].t).getTime()) / 2).toISOString();
+        result.push({ x: midTime, y: null });
+      }
+      result.push({ x: pts[i].t, y: pts[i].v });
+    }
+    return result;
+  }
+
+  let min = Infinity;
+  let max = -Infinity;
+  points.forEach((p) => {
+    if (p.v < min) min = p.v;
+    if (p.v > max) max = p.v;
+  });
+  const yRange = isFinite(min) && isFinite(max) ? { min: min - 10, max: max + 10 } : {};
+
+  new Chart(canvas.getContext("2d"), {
+    type: "line",
+    data: {
+      datasets: [{
+        label: "Nhiệt độ (°C)",
+        data: withGapBreaks(points),
+        spanGaps: false,
+        borderColor: "#2563eb",
+        backgroundColor: "#2563eb",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.25,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { type: "time", grid: { color: "#e9ecef" } },
+        y: Object.assign({ grid: { color: "#e9ecef" }, title: { display: true, text: "°C" } }, yRange),
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: "nearest", intersect: false },
+      },
+    },
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

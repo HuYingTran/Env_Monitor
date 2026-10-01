@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+{% block title %}Trang chủ - {{ site_name }}{% endblock %}
+
+{% block navbar_extra %}
+{% if warehouses %}
+<ul class="navbar-nav flex-row align-items-center gap-1 me-3">
+  <li class="nav-item"><span class="badge bg-secondary" title="Tổng số kho">{{ total_warehouses }} kho</span></li>
+  <li class="nav-item"><span class="badge bg-secondary" title="Tổng số cảm biến">{{ total_sensors }} CB</span></li>
+  <li class="nav-item"><span class="badge bg-success" title="Bình thường">{{ status_totals.ok }}</span></li>
+  <li class="nav-item"><span class="badge" style="background-color:#f59e0b;" title="Cảnh báo">{{ status_totals.warning }}</span></li>
+  <li class="nav-item"><span class="badge bg-danger" title="Nguy hiểm">{{ status_totals.critical }}</span></li>
+  <li class="nav-item"><span class="badge bg-secondary bg-opacity-50" title="Không có dữ liệu">{{ status_totals.unknown }}</span></li>
+</ul>
+{% endif %}
+{% if warehouses or current_user.has_role('admin', 'manager') %}
+<div class="btn-group btn-group-sm me-3" role="group">
+  <button type="button" class="btn btn-outline-light" id="viewModeMap">Bản đồ</button>
+  <button type="button" class="btn btn-outline-light" id="viewModeList">Danh sách</button>
+</div>
+{% endif %}
+{% if warehouses %}
+<span class="text-light small me-3" id="realtimeUpdatedAt"></span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if not influx_configured %}
+<div class="alert alert-warning">InfluxDB chưa được cấu hình đầy đủ (xem file <code>.env</code>) — dữ liệu nhiệt độ sẽ hiển thị "Không có dữ liệu".</div>
+{% endif %}
+
+{% if warehouses %}
+<div class="row row-cols-1 row-cols-lg-3 g-3 mb-4">
+  <div class="col">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title small text-muted mb-2">Nhiệt độ (°C)</h6>
+        <div style="position:relative; height:220px; background-color:#f2f4f5; border-radius:6px; padding:8px;">
+          <canvas id="temperatureChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title small text-muted mb-2">Độ ẩm (%)</h6>
+        <div style="position:relative; height:220px; background-color:#f2f4f5; border-radius:6px; padding:8px;">
+          <canvas id="humidityChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="card-title small text-muted mb-2">Áp suất (hPa)</h6>
+        <div style="position:relative; height:220px; background-color:#f2f4f5; border-radius:6px; padding:8px;">
+          <canvas id="pressureChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if not warehouses and not current_user.has_role('admin', 'manager') %}
+<div class="alert alert-info">Chưa có kho nào.</div>
+{% else %}
+<div class="row row-cols-1 row-cols-md-3 g-4" id="warehouseGrid">
+  {% for wh in warehouses %}
+  {% set readings = summary.get(wh.id, {}) %}
+  <div class="col warehouse-card-col" data-warehouse-id="{{ wh.id }}" {% if current_user.has_role('admin', 'manager') %}draggable="true"{% endif %}>
+    <div class="card h-100 shadow-sm{% if current_user.has_role('admin', 'manager') %} draggable-card{% endif %}">
+      <div class="card-header d-flex justify-content-between align-items-center bg-white">
+        <span class="d-flex align-items-center gap-1">
+          {% if current_user.has_role('admin', 'manager') %}<span class="text-muted" title="Kéo để sắp xếp lại" style="cursor:move;">⠿</span>{% endif %}
+          <a href="{{ url_for('main.warehouse_detail', warehouse_id=wh.id) }}" class="fw-semibold text-decoration-none">{{ wh.name }}</a>
+        </span>
+        <span class="text-muted small">{{ wh.code }}</span>
+      </div>
+
+      <a href="{{ url_for('main.warehouse_detail', warehouse_id=wh.id) }}" class="text-decoration-none view-mode-map">
+        {% if wh.map_image_path %}
+        <div class="warehouse-map mb-0 rounded-0 border-0">
+          <img src="{{ url_for('static', filename='uploads/warehouse_maps/' + wh.map_image_path) }}" alt="Sơ đồ {{ wh.name }}">
+          {% for zone in wh.zones %}
+          <div class="map-zone" style="left:{{ zone.x }}%; top:{{ zone.y }}%; width:{{ zone.width }}%; height:{{ zone.height }}%; border-color:{{ zone.color }};">
+            <span class="map-zone-label" style="color:{{ zone.color }};">{{ zone.name }}</span>
+          </div>
+          {% endfor %}
+          {% for sensor in wh.sensors %}
+          {% if sensor.x is not none and sensor.y is not none %}
+          {% set info = readings.get(sensor.id) %}
+          <div class="map-marker status-{{ info.status if info else 'unknown' }} sensor-entity-link"
+               style="left:{{ sensor.x }}%; top:{{ sensor.y }}%; cursor:pointer;"
+               title="{{ sensor.name }}{% if info and info.reading %}: {{ '%.1f'|format(info.reading.value) }}°C{% endif %}"
+               data-id="{{ sensor.id }}"
+               data-name="{{ sensor.name }}"
+               data-code="{{ sensor.sensor_code }}"
+               data-warehouse-id="{{ wh.id }}"
+               data-warning-threshold="{{ sensor.warning_threshold if sensor.warning_threshold is not none else '' }}"
+               data-critical-threshold="{{ sensor.critical_threshold if sensor.critical_threshold is not none else '' }}"></div>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="d-flex align-items-center justify-content-center bg-light text-muted" style="height:180px;">Chưa có ảnh sơ đồ</div>
+        {% endif %}
+      </a>
+
+      <a href="{{ url_for('main.warehouse_detail', warehouse_id=wh.id) }}" class="text-decoration-none text-body view-mode-list d-none">
+        {% if not wh.sensors %}
+        <div class="text-muted small px-3 py-4 text-center">Chưa có cảm biến nào.</div>
+        {% else %}
+        <ul class="list-group list-group-flush" style="max-height:220px; overflow-y:auto;">
+          {% for sensor in wh.sensors %}
+          {% set info = readings.get(sensor.id) %}
+          {% set status = info.status if info else 'unknown' %}
+          <li class="list-group-item d-flex justify-content-between align-items-center py-2 sensor-entity-link" style="cursor:pointer;"
+              data-id="{{ sensor.id }}"
+              data-name="{{ sensor.name }}"
+              data-code="{{ sensor.sensor_code }}"
+              data-warehouse-id="{{ wh.id }}"
+              data-warning-threshold="{{ sensor.warning_threshold if sensor.warning_threshold is not none else '' }}"
+              data-critical-threshold="{{ sensor.critical_threshold if sensor.critical_threshold is not none else '' }}">
+            <span class="text-truncate small me-2 d-flex align-items-center">
+              <span class="d-inline-block rounded-circle me-2 flex-shrink-0" style="width:8px; height:8px; background-color:{{ {'ok': '#22c55e', 'warning': '#f59e0b', 'critical': '#ef4444', 'unknown': '#9ca3af'}[status] }};"></span>
+              {{ sensor.name }}
+            </span>
+            <span class="small fw-semibold text-nowrap">
+              {% if info and info.reading %}{{ "%.1f"|format(info.reading.value) }}&deg;C{% else %}<span class="text-muted fw-normal">Không có dữ liệu</span>{% endif %}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </a>
+
+      <div class="card-body py-2 d-flex justify-content-between align-items-center">
+        <span class="text-muted small">{{ wh.sensors|length }} cảm biến</span>
+        {% set critical_count = readings.values() | selectattr('status', 'equalto', 'critical') | list | length %}
+        {% set warning_count = readings.values() | selectattr('status', 'equalto', 'warning') | list | length %}
+        {% set ok_count = readings.values() | selectattr('status', 'equalto', 'ok') | list | length %}
+        {% if critical_count %}
+        <span class="badge bg-danger">{{ critical_count }} nguy hiểm</span>
+        {% elif warning_count %}
+        <span class="badge bg-warning text-dark">{{ warning_count }} cảnh báo</span>
+        {% elif ok_count %}
+        <span class="badge bg-success">Bình thường</span>
+        {% else %}
+        <span class="badge bg-secondary">Không có dữ liệu</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% if current_user.has_role('admin', 'manager') %}
+  <div class="col">
+    <a href="{{ url_for('main.warehouse_new') }}" class="card h-100 text-decoration-none text-muted d-flex align-items-center justify-content-center" style="border:2px dashed #ced4da; min-height:200px;">
+      <div class="text-center">
+        <div style="font-size:2rem; line-height:1;">+</div>
+        <div class="small">Thêm kho</div>
+      </div>
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Modal: chi tiết cảm biến -->
+<div class="modal fade" id="sensorEntityModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="sensorEntityModalTitle">Chi tiết cảm biến</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs mb-3" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="se-tab-history-btn" data-bs-toggle="tab" data-bs-target="#se-tab-history" type="button" role="tab">Lịch sử</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="se-tab-info-btn" data-bs-toggle="tab" data-bs-target="#se-tab-info" type="button" role="tab">Thông tin</button>
+          </li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade" id="se-tab-info" role="tabpanel">
+            <div class="mb-3">
+              <label class="form-label">Tên cảm biến</label>
+              <input type="text" id="seName" class="form-control" {% if not current_user.has_role('admin', 'manager') %}disabled{% endif %}>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Mã cảm biến</label>
+              <input type="text" id="seCode" class="form-control" disabled>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Kho</label>
+              <select id="seWarehouse" class="form-select" {% if not current_user.has_role('admin', 'manager') %}disabled{% endif %}>
+                {% for w in warehouses %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="row">
+              <div class="col mb-3">
+                <label class="form-label">Ngưỡng cảnh báo (°C)</label>
+                <input type="number" step="0.1" id="seWarning" class="form-control" {% if not current_user.has_role('admin', 'manager') %}disabled{% endif %}>
+              </div>
+              <div class="col mb-3">
+                <label class="form-label">Ngưỡng nguy hiểm (°C)</label>
+                <input type="number" step="0.1" id="seCritical" class="form-control" {% if not current_user.has_role('admin', 'manager') %}disabled{% endif %}>
+              </div>
+            </div>
+            {% if current_user.has_role('admin', 'manager') %}
+            <button type="button" id="seSaveBtn" class="btn btn-primary">Lưu thay đổi</button>
+            <span id="seSaveMsg" class="ms-2 small"></span>
+            {% endif %}
+          </div>
+          <div class="tab-pane fade show active" id="se-tab-history" role="tabpanel">
+            <div style="position:relative; height:320px; background-color:#f2f4f5; border-radius:6px; padding:8px;">
+              <canvas id="seHistoryChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if warehouses %}
+<script>
+(function () {
+  const mapBtn = document.getElementById("viewModeMap");
+  const listBtn = document.getElementById("viewModeList");
+  if (!mapBtn || !listBtn) return;
+
+  function setViewMode(mode) {
+    document.querySelectorAll(".view-mode-map").forEach((el) => el.classList.toggle("d-none", mode !== "map"));
+    document.querySelectorAll(".view-mode-list").forEach((el) => el.classList.toggle("d-none", mode !== "list"));
+    mapBtn.classList.toggle("active", mode === "map");
+    listBtn.classList.toggle("active", mode === "list");
+    localStorage.setItem("warehouseViewMode", mode);
+  }
+
+  mapBtn.addEventListener("click", () => setViewMode("map"));
+  listBtn.addEventListener("click", () => setViewMode("list"));
+  setViewMode(localStorage.getItem("warehouseViewMode") || "map");
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script>
+(function () {
+  const temperatureCanvas = document.getElementById("temperatureChart");
+  if (!temperatureCanvas) return;
+  const humidityCanvas = document.getElementById("humidityChart");
+  const pressureCanvas = document.getElementById("pressureChart");
+
+  const COLORS = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#65a30d"];
+  const updatedAtEl = document.getElementById("realtimeUpdatedAt");
+
+  function withGapBreaks(pts) {
+    if (pts.length < 3) return pts.map((p) => ({ x: p.t, y: p.v }));
+    const deltas = [];
+    for (let i = 1; i < pts.length; i++) {
+      deltas.push(new Date(pts[i].t) - new Date(pts[i - 1].t));
+    }
+    deltas.sort((a, b) => a - b);
+    const median = deltas[Math.floor(deltas.length / 2)] || 0;
+    const threshold = median * 4;
+    const result = [{ x: pts[0].t, y: pts[0].v }];
+    for (let i = 1; i < pts.length; i++) {
+      const gap = new Date(pts[i].t) - new Date(pts[i - 1].t);
+      if (threshold > 0 && gap > threshold) {
+        const midTime = new Date((new Date(pts[i - 1].t).getTime() + new Date(pts[i].t).getTime()) / 2).toISOString();
+        result.push({ x: midTime, y: null });
+      }
+      result.push({ x: pts[i].t, y: pts[i].v });
+    }
+    return result;
+  }
+
+  function buildDatasets(sensors) {
+    return sensors.map((s, i) => ({
+      label: s.warehouse ? `${s.name} (${s.warehouse})` : s.name,
+      data: withGapBreaks(s.data),
+      spanGaps: false,
+      borderColor: COLORS[i % COLORS.length],
+      backgroundColor: COLORS[i % COLORS.length],
+      borderWidth: 1,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.25,
+    }));
+  }
+
+  function makeChart(canvas, yOptions) {
+    return new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: { datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { type: "time", time: { unit: "hour" }, grid: { color: "#e9ecef" } },
+          y: Object.assign({ grid: { color: "#e9ecef" } }, yOptions),
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: "nearest", intersect: false },
+        },
+      },
+    });
+  }
+
+  function temperatureRange(sensors) {
+    let min = Infinity;
+    let max = -Infinity;
+    sensors.forEach((s) => s.data.forEach((p) => {
+      if (p.v < min) min = p.v;
+      if (p.v > max) max = p.v;
+    }));
+    if (!isFinite(min) || !isFinite(max)) return { min: 0, max: 100 };
+    return { min: min - 10, max: max + 10 };
+  }
+
+  const temperatureChart = makeChart(temperatureCanvas, {});
+  const humidityChart = humidityCanvas ? makeChart(humidityCanvas, { min: 0, max: 100 }) : null;
+  const pressureChart = pressureCanvas ? makeChart(pressureCanvas, {}) : null;
+
+  async function refresh() {
+    try {
+      const res = await fetch("/api/sensors/realtime?minutes=480");
+      if (!res.ok) return;
+      const payload = await res.json();
+
+      const temperatureSensors = payload.temperature || [];
+      temperatureChart.data.datasets = buildDatasets(temperatureSensors);
+      const range = temperatureRange(temperatureSensors);
+      temperatureChart.options.scales.y.min = range.min;
+      temperatureChart.options.scales.y.max = range.max;
+      temperatureChart.update("none");
+      if (humidityChart) {
+        humidityChart.data.datasets = buildDatasets(payload.humidity || []);
+        humidityChart.update("none");
+      }
+      if (pressureChart) {
+        pressureChart.data.datasets = buildDatasets(payload.pressure || []);
+        pressureChart.update("none");
+      }
+      if (updatedAtEl) {
+        updatedAtEl.textContent = "Cập nhật lúc " + new Date().toLocaleTimeString("vi-VN");
+      }
+    } catch (err) {
+      console.error("Không thể tải dữ liệu realtime:", err);
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 30000);
+})();
+</script>
+{% endif %}
+
+{% if warehouses %}
+<script>
+(function () {
+  const modalEl = document.getElementById("sensorEntityModal");
+  if (!modalEl) return;
+  const modal = new bootstrap.Modal(modalEl);
+  const canEdit = {{ 'true' if current_user.has_role('admin', 'manager') else 'false' }};
+
+  let currentId = null;
+  let historyChart = null;
+
+  function withGapBreaks(pts) {
+    if (pts.length < 3) return pts.map((p) => ({ x: p.t, y: p.v }));
+    const deltas = [];
+    for (let i = 1; i < pts.length; i++) {
+      deltas.push(new Date(pts[i].t) - new Date(pts[i - 1].t));
+    }
+    deltas.sort((a, b) => a - b);
+    const median = deltas[Math.floor(deltas.length / 2)] || 0;
+    const threshold = median * 4;
+    const result = [{ x: pts[0].t, y: pts[0].v }];
+    for (let i = 1; i < pts.length; i++) {
+      const gap = new Date(pts[i].t) - new Date(pts[i - 1].t);
+      if (threshold > 0 && gap > threshold) {
+        const midTime = new Date((new Date(pts[i - 1].t).getTime() + new Date(pts[i].t).getTime()) / 2).toISOString();
+        result.push({ x: midTime, y: null });
+      }
+      result.push({ x: pts[i].t, y: pts[i].v });
+    }
+    return result;
+  }
+
+  async function loadHistory(sensorId) {
+    const canvas = document.getElementById("seHistoryChart");
+    if (historyChart) {
+      historyChart.destroy();
+      historyChart = null;
+    }
+    const res = await fetch(`/api/sensors/${sensorId}/history?hours=24`);
+    const payload = await res.json();
+    const points = payload.data || [];
+
+    let min = Infinity, max = -Infinity;
+    points.forEach((p) => { if (p.v < min) min = p.v; if (p.v > max) max = p.v; });
+    const yRange = isFinite(min) && isFinite(max) ? { min: min - 10, max: max + 10 } : {};
+
+    historyChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        datasets: [{
+          label: "Nhiệt độ (°C)",
+          data: withGapBreaks(points),
+          spanGaps: false,
+          borderColor: "#2563eb",
+          backgroundColor: "#2563eb",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.25,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { type: "time", grid: { color: "#e9ecef" } },
+          y: Object.assign({ grid: { color: "#e9ecef" }, title: { display: true, text: "°C" } }, yRange),
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: "nearest", intersect: false },
+        },
+      },
+    });
+  }
+
+  document.querySelectorAll(".sensor-entity-link").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ds = el.dataset;
+      currentId = ds.id;
+
+      document.getElementById("sensorEntityModalTitle").textContent = ds.name;
+      document.getElementById("seName").value = ds.name;
+      document.getElementById("seCode").value = ds.code;
+      document.getElementById("seWarehouse").value = ds.warehouseId || "";
+      document.getElementById("seWarning").value = ds.warningThreshold || "";
+      document.getElementById("seCritical").value = ds.criticalThreshold || "";
+
+      const msgEl = document.getElementById("seSaveMsg");
+      if (msgEl) msgEl.textContent = "";
+      document.getElementById("se-tab-history-btn").click();
+      modal.show();
+      loadHistory(currentId);
+    });
+  });
+
+  const saveBtn = document.getElementById("seSaveBtn");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", async () => {
+      if (!currentId) return;
+      const name = document.getElementById("seName").value.trim();
+      if (!name) {
+        alert("Vui lòng nhập tên cảm biến.");
+        return;
+      }
+      const payload = {
+        name,
+        warehouse_id: document.getElementById("seWarehouse").value || null,
+        warning_threshold: document.getElementById("seWarning").value || null,
+        critical_threshold: document.getElementById("seCritical").value || null,
+      };
+      const res = await fetch(`/api/sensors/${currentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const msgEl = document.getElementById("seSaveMsg");
+      if (res.ok) {
+        location.reload();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (msgEl) {
+          msgEl.textContent = err.error || "Không thể lưu thay đổi.";
+          msgEl.className = "ms-2 small text-danger";
+        }
+      }
+    });
+  }
+})();
+</script>
+{% endif %}
+
+{% if current_user.has_role('admin', 'manager') %}
+<script>
+(function () {
+  const grid = document.getElementById("warehouseGrid");
+  if (!grid) return;
+  let dragged = null;
+
+  function getDragAfterElement(container, x, y) {
+    const items = [...container.querySelectorAll(".warehouse-card-col:not(.dragging)")];
+    return items.reduce((closest, child) => {
+      const box = child.getBoundingClientRect();
+      const dx = x - (box.left + box.width / 2);
+      const dy = y - (box.top + box.height / 2);
+      const distance = Math.hypot(dx, dy);
+      if (distance < closest.distance) {
+        return { distance, element: child };
+      }
+      return closest;
+    }, { distance: Number.POSITIVE_INFINITY, element: null }).element;
+  }
+
+  function saveOrder() {
+    const ids = [...grid.querySelectorAll(".warehouse-card-col")].map((el) => el.dataset.warehouseId);
+    fetch("/api/warehouses/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order: ids }),
+    });
+  }
+
+  grid.querySelectorAll(".warehouse-card-col").forEach((col) => {
+    col.addEventListener("dragstart", () => {
+      dragged = col;
+      col.classList.add("dragging");
+    });
+    col.addEventListener("dragend", () => {
+      col.classList.remove("dragging");
+      dragged = null;
+      saveOrder();
+    });
+  });
+
+  grid.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (!dragged) return;
+    const afterElement = getDragAfterElement(grid, e.clientX, e.clientY);
+    if (afterElement == null) {
+      grid.appendChild(dragged);
+    } else if (afterElement !== dragged) {
+      grid.insertBefore(dragged, afterElement);
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}403 - Không có quyền truy cập{% endblock %}
+{% block content %}
+<div class="text-center mt-5">
+  <h1 class="display-4">403</h1>
+  <p class="lead">Bạn không có quyền truy cập trang này.</p>
+  <a href="{{ url_for('main.home') }}" class="btn btn-primary">Về trang chủ</a>
+</div>
+{% endblock %}

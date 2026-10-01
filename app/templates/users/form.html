@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Sửa người dùng' if user else 'Thêm người dùng' }} - {{ site_name }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <h4 class="mb-3">{{ 'Sửa người dùng' if user else 'Thêm người dùng' }}</h4>
+    <form method="post">
+      <div class="mb-3">
+        <label class="form-label">Tên đăng nhập</label>
+        <input type="text" name="username" class="form-control" value="{{ user.username if user else '' }}" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Email</label>
+        <input type="email" name="email" class="form-control" value="{{ user.email if user else '' }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Mật khẩu {{ '(để trống nếu không đổi)' if user else '' }}</label>
+        <input type="password" name="password" class="form-control" {% if not user %}required{% endif %}>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Vai trò</label>
+        <select name="role_id" class="form-select" required>
+          {% for r in roles %}
+          <option value="{{ r.id }}" {% if user and user.role_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if user %}
+      <div class="form-check mb-3">
+        <input type="checkbox" name="is_active" id="is_active" class="form-check-input" {% if user.is_active_flag %}checked{% endif %}>
+        <label class="form-check-label" for="is_active">Tài khoản đang hoạt động</label>
+      </div>
+      {% endif %}
+      <button type="submit" class="btn btn-primary">Lưu</button>
+      <a href="{{ url_for('users.index') }}" class="btn btn-outline-secondary">Quay lại</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

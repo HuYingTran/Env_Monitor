@@ -1,0 +1,177 @@
+body {
+  background-color: #f5f6f8;
+}
+
+.app-navbar {
+  background-color: #111827;
+}
+
+.app-navbar .navbar-brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.app-navbar .navbar-brand .bi {
+  color: #38bdf8;
+}
+
+.app-navbar .nav-link {
+  color: rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.app-navbar .nav-link:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.app-navbar .nav-link.active {
+  color: #fff;
+  font-weight: 600;
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.app-navbar .dropdown-toggle::after {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.warehouse-card-col.dragging {
+  opacity: 0.4;
+}
+
+.draggable-card {
+  transition: transform 0.15s ease;
+}
+
+.warehouse-map {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: #fff;
+}
+
+.warehouse-map img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.map-zone {
+  position: absolute;
+  border: 2px dashed rgba(59, 130, 246, 0.7);
+  background-color: rgba(59, 130, 246, 0.12);
+  pointer-events: none;
+}
+
+.map-zone.editable {
+  pointer-events: auto;
+  cursor: move;
+}
+
+.map-zone-label {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 0.75rem;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.zone-delete {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ef4444;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.zone-delete:hover {
+  color: #b91c1c;
+}
+
+.map-marker {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.map-marker::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background-color: inherit;
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0.9;
+  pointer-events: none;
+  animation: marker-pulse 2.2s cubic-bezier(0.2, 0.7, 0.4, 1) infinite;
+}
+
+@keyframes marker-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.85;
+  }
+  60% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3.2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-marker::before {
+    animation: none;
+    display: none;
+  }
+}
+
+.map-marker.status-ok { background-color: #22c55e; }
+.map-marker.status-warning { background-color: #f59e0b; }
+.map-marker.status-critical { background-color: #ef4444; }
+.map-marker.status-unknown { background-color: #9ca3af; }
+
+.map-marker.editable {
+  cursor: move;
+}

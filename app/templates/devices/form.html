@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Sửa thiết bị' if device else 'Thêm thiết bị' }} - {{ site_name }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <h4 class="mb-3">{{ 'Sửa thiết bị' if device else 'Thêm thiết bị' }}</h4>
+    <form method="post">
+      <fieldset {% if device and not can_edit %}disabled{% endif %}>
+        <div class="mb-3">
+          <label class="form-label">Tên thiết bị</label>
+          <input type="text" name="name" class="form-control" value="{{ device.name if device else '' }}" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Mã thiết bị (chọn từ dữ liệu đang gửi vào InfluxDB)</label>
+          <select name="device_code" class="form-select" required {% if not available_codes %}disabled{% endif %}>
+            <option value="">-- Chọn mã thiết bị --</option>
+            {% for code in available_codes %}
+            <option value="{{ code }}" {% if device and device.device_code == code %}selected{% endif %}>{{ code }}</option>
+            {% endfor %}
+          </select>
+          {% if not available_codes %}
+          <div class="form-text text-danger">Không có mã nào khả dụng — kiểm tra kết nối InfluxDB hoặc chờ thiết bị gửi dữ liệu (24h gần nhất).</div>
+          {% endif %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Loại thiết bị</label>
+          <input type="text" name="type" class="form-control" value="{{ device.type if device else '' }}" placeholder="vd: cảm biến nhiệt độ, gateway...">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Kho</label>
+          <select name="warehouse_id" class="form-select">
+            <option value="">-- Không --</option>
+            {% for w in warehouses %}
+            <option value="{{ w.id }}" {% if device and device.warehouse_id == w.id %}selected{% endif %}>{{ w.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Trạng thái</label>
+          <select name="status" class="form-select">
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if device and device.status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if device %}
+        <p class="text-muted small">Lần cuối hoạt động: {{ device.last_seen or 'chưa có dữ liệu' }}</p>
+        {% endif %}
+        <button type="submit" class="btn btn-primary">Lưu</button>
+      </fieldset>
+      <a href="{{ url_for('devices.index') }}" class="btn btn-outline-secondary">Quay lại</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

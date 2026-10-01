@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}{{ warehouse.name }} - {{ site_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0">{{ warehouse.name }} <span class="text-muted small">({{ warehouse.code }})</span></h4>
+    {% if warehouse.description %}<p class="text-muted mb-0">{{ warehouse.description }}</p>{% endif %}
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('main.home') }}" class="btn btn-outline-secondary btn-sm">← Trang chủ</a>
+    {% if can_edit %}
+    <a href="{{ url_for('main.warehouse_edit', warehouse_id=warehouse.id) }}" class="btn btn-outline-secondary btn-sm">Sửa thông tin kho</a>
+    <button id="toggleEditMode" class="btn btn-primary btn-sm">Bật chế độ chỉnh sửa</button>
+    {% endif %}
+    {% if current_user.has_role('admin') %}
+    <form method="post" action="{{ url_for('main.warehouse_delete', warehouse_id=warehouse.id) }}" onsubmit="return confirm('Xóa kho này? Toàn bộ vùng/cảm biến sẽ bị xóa.');">
+      <button type="submit" class="btn btn-outline-danger btn-sm">Xóa kho</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if not influx_configured %}
+<div class="alert alert-warning">InfluxDB chưa được cấu hình đầy đủ — giá trị nhiệt độ sẽ hiển thị "Không có dữ liệu".</div>
+{% endif %}
+
+{% if can_edit %}
+<div id="editToolbar" class="mb-3 d-none">
+  <div class="btn-group" role="group">
+    <button id="drawZoneBtn" type="button" class="btn btn-outline-primary btn-sm">Thêm vùng (kéo chuột trên bản đồ)</button>
+    <button id="addSensorBtn" type="button" class="btn btn-outline-success btn-sm">Thêm cảm biến (click trên bản đồ)</button>
+  </div>
+  {% if unplaced_sensors %}
+  <div class="d-inline-flex align-items-center gap-2 ms-2">
+    <select id="unplacedSensorSelect" class="form-select form-select-sm w-auto">
+      {% for s in unplaced_sensors %}
+      <option value="{{ s.id }}" data-name="{{ s.name }}"
+        data-zone-id="{{ s.zone_id or '' }}"
+        data-warning-threshold="{{ s.warning_threshold if s.warning_threshold is not none else '' }}"
+        data-critical-threshold="{{ s.critical_threshold if s.critical_threshold is not none else '' }}">{{ s.name }} ({{ s.sensor_code }})</option>
+      {% endfor %}
+    </select>
+    <button id="placeSensorBtn" type="button" class="btn btn-outline-info btn-sm">Đặt vị trí cảm biến đã đăng ký</button>
+  </div>
+  {% endif %}
+  <span id="editHint" class="ms-2 text-muted small"></span>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    {% if warehouse.map_image_path %}
+    <div class="warehouse-map" id="warehouseMap" data-warehouse-id="{{ warehouse.id }}" data-can-edit="{{ 'true' if can_edit else 'false' }}" data-auto-place-sensor="{{ auto_place_sensor_id or '' }}">
+      <img src="{{ url_for('static', filename='uploads/warehouse_maps/' + warehouse.map_image_path) }}" alt="Sơ đồ {{ warehouse.name }}" draggable="false">
+
+      {% for zone in warehouse.zones %}
+      <div class="map-zone {{ 'editable' if can_edit else '' }}" data-zone-id="{{ zone.id }}" style="left:{{ zone.x }}%; top:{{ zone.y }}%; width:{{ zone.width }}%; height:{{ zone.height }}%; border-color:{{ zone.color }};">
+        <span class="map-zone-label" style="color:{{ zone.color }};">{{ zone.name }}</span>
+        {% if can_edit %}
+        <a href="#" class="zone-delete" data-zone-id="{{ zone.id }}" title="Xóa vùng">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M5.5 5.5a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+        </a>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {% for sensor in warehouse.sensors %}
+      {% if sensor.x is not none and sensor.y is not none %}
+      {% set info = readings.get(sensor.id) %}
+      <div class="map-marker status-{{ info.status if info else 'unknown' }} {{ 'editable' if can_edit else '' }}"
+           data-sensor-id="{{ sensor.id }}"
+           data-sensor-name="{{ sensor.name }}"
+           data-zone-id="{{ sensor.zone_id or '' }}"
+           data-warning-threshold="{{ sensor.warning_threshold if sensor.warning_threshold is not none else '' }}"
+           data-critical-threshold="{{ sensor.critical_threshold if sensor.critical_threshold is not none else '' }}"
+           style="left:{{ sensor.x }}%; top:{{ sensor.y }}%;"
+           title="{{ sensor.name }}"></div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">Kho này chưa có ảnh sơ đồ mặt bằng. {% if can_edit %}<a href="{{ url_for('main.warehouse_edit', warehouse_id=warehouse.id) }}">Sửa thông tin kho</a> để upload ảnh.{% endif %}</div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-4">
+    <h5 class="mt-0">Danh sách cảm biến trong kho</h5>
+    {% if not warehouse.sensors %}
+    <p class="text-muted">Chưa có cảm biến nào.</p>
+    {% else %}
+    <div class="table-responsive">
+    <table class="table table-sm table-striped bg-white">
+      <thead><tr><th>Tên</th><th>Mã cảm biến</th><th>Vùng</th><th>Giá trị mới nhất</th><th>Trạng thái</th><th>Vị trí trên bản đồ</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+      {% for sensor in warehouse.sensors %}
+      {% set info = readings.get(sensor.id) %}
+      <tr>
+        <td>{{ sensor.name }}</td>
+        <td><code>{{ sensor.sensor_code }}</code></td>
+        <td>{{ sensor.zone.name if sensor.zone else '-' }}</td>
+        <td>{% if info and info.reading %}{{ "%.1f"|format(info.reading.value) }}&deg;C{% else %}Không có dữ liệu{% endif %}</td>
+        <td><span class="badge bg-{{ 'danger' if info.status == 'critical' else ('warning' if info.status == 'warning' else ('success' if info.status == 'ok' else 'secondary')) }}">{{ info.status }}</span></td>
+        <td>
+          {% if sensor.x is none or sensor.y is none %}
+          <span class="badge bg-secondary">Chưa đặt vị trí</span>
+          {% else %}
+          <span class="text-muted small">✓</span>
+          {% endif %}
+        </td>
+        {% if can_edit %}
+        <td>
+          <button type="button" class="btn btn-sm btn-outline-secondary sensor-edit-btn"
+            data-sensor-id="{{ sensor.id }}"
+            data-sensor-name="{{ sensor.name }}"
+            data-zone-id="{{ sensor.zone_id or '' }}"
+            data-warning-threshold="{{ sensor.warning_threshold if sensor.warning_threshold is not none else '' }}"
+            data-critical-threshold="{{ sensor.critical_threshold if sensor.critical_threshold is not none else '' }}">Sửa</button>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if can_edit %}
+<!-- Modal: thêm vùng -->
+<div class="modal fade" id="zoneModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Thêm vùng trong kho</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Tên vùng</label><input type="text" id="zoneName" class="form-control" required></div>
+        <div class="mb-3"><label class="form-label">Màu</label><input type="color" id="zoneColor" class="form-control form-control-color" value="#3b82f6"></div>
+      </div>
+      <div class="modal-footer"><button type="button" id="zoneSaveBtn" class="btn btn-primary">Lưu</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: thêm cảm biến -->
+<div class="modal fade" id="sensorModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Thêm cảm biến</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Tên cảm biến</label><input type="text" id="sensorName" class="form-control" required></div>
+        <div class="mb-3"><label class="form-label">Mã cảm biến (khớp tag trong InfluxDB)</label><input type="text" id="sensorCode" class="form-control" required></div>
+        <div class="row">
+          <div class="col"><label class="form-label">Ngưỡng cảnh báo (°C)</label><input type="number" step="0.1" id="sensorWarning" class="form-control"></div>
+          <div class="col"><label class="form-label">Ngưỡng nguy hiểm (°C)</label><input type="number" step="0.1" id="sensorCritical" class="form-control"></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" id="sensorSaveBtn" class="btn btn-primary">Lưu</button></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Modal: xem / sửa thông tin cảm biến -->
+<div class="modal fade" id="sensorInfoModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="sensorInfoName">Cảm biến</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p class="mb-1">Giá trị mới nhất: <strong id="sensorInfoValue">-</strong></p>
+        <p class="text-muted small" id="sensorInfoTime"></p>
+        {% if can_edit %}
+        <hr>
+        <div class="mb-3">
+          <label class="form-label">Tên cảm biến</label>
+          <input type="text" id="sensorEditName" class="form-control">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Kho</label>
+          <select id="sensorEditWarehouse" class="form-select">
+            {% for w in warehouses %}<option value="{{ w.id }}" {% if w.id == warehouse.id %}selected{% endif %}>{{ w.name }}</option>{% endfor %}
+          </select>
+          <div class="form-text">Đổi kho sẽ xóa vùng và vị trí trên bản đồ hiện tại (cần đặt lại vị trí ở kho mới).</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Vùng</label>
+          <select id="sensorEditZone" class="form-select">
+            <option value="">-- Không --</option>
+            {% for zone in warehouse.zones %}<option value="{{ zone.id }}">{{ zone.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="row">
+          <div class="col"><label class="form-label">Ngưỡng cảnh báo (°C)</label><input type="number" step="0.1" id="sensorEditWarning" class="form-control"></div>
+          <div class="col"><label class="form-label">Ngưỡng nguy hiểm (°C)</label><input type="number" step="0.1" id="sensorEditCritical" class="form-control"></div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        {% if can_edit %}
+        <button type="button" id="sensorInfoDeleteBtn" class="btn btn-outline-danger me-auto">Xóa cảm biến</button>
+        <button type="button" id="sensorInfoSaveBtn" class="btn btn-primary">Lưu thay đổi</button>
+        {% endif %}
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/warehouse_map.js') }}"></script>
+{% endblock %}

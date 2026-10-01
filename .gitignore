@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+instance/
+venv/
+.venv/
+app/static/uploads/warehouse_maps/*
+!app/static/uploads/warehouse_maps/.gitkeep
+.claude/
